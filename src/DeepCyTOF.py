@@ -20,6 +20,7 @@ from Util import denoisingAutoEncoder as dae
 from Util import FileIO as io
 from Util import feedforwadClassifier as net
 from Util import MMDNet as mmd
+from Util import MMDNet_SG as SgMMD
 
 
 class Sample:
@@ -182,7 +183,11 @@ for i in np.arange(testIndex.size):
                                             denoiseSource.y)
             calibMMDNet = None
         else:
+            """
             calibrateSource = mmd.calibrate(denoiseTarget, denoiseSource,
+                                            sourceIndex, predLabel, dataSet[choice])
+            """
+            calibrateSource = SgMMD.ModelSG(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
             
         print('Run the classifier on source ', str(sourceIndex),
