@@ -1,17 +1,18 @@
 import random
 import tensorflow as tf
 import numpy as np
-import math
-
 
 from tqdm import tqdm
 
 from keras import backend as K
-from keras.layers import Dense, BatchNormalization, Activation
-from tf.contrib.layers import l2_regularizer
-from tf.math import add
+from keras.layers import Dense, BatchNormalization, Activation, Input, Add
+from keras.regularizers import l2
+from keras.models import Model
+from keras import optimizers as opt
+
+from tensorflow.train import RMSPropOptimizer
+
 from Util import CostFunctions as cf
-from tf.train import RMSPropOptimizer
 IntType = 'int32'
 
 class Layer(object):
@@ -43,7 +44,7 @@ class Layer(object):
         self.layer_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope=self.name)
     """
 
-    def __init__(self, units, inputs, name, l2_penalty, sg=False, out=False):
+    def __init__(self, units, inputs, name, l2_penalty=None, sg=False, out=False):
         self.name = name
         with tf.variable_scope(self.name):
             if sg:
@@ -53,7 +54,9 @@ class Layer(object):
                 if not out:
                     self.output = BatchNormalization()(inputs)
                     self.output = Activation('relu')(self.output)
-                self.output = Dense(units, kernel_regularizer=l2_regularizer(l2_penalty))(self.output)
+                else: self.output = inputs
+                self.output = Dense(units, activation='linear',
+                      W_regularizer=l2(l2_penalty), init = 'random_uniform')(self.output)
         self.layer_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope=self.name)
 
 class ModelSG(object):
@@ -67,7 +70,10 @@ class ModelSG(object):
         sess: A tf.sess() that will be used by the model.
     """
     
-    def __init__(self, sess, target, source, sourceIndex, predLabel, path):
+    def __init__(self, target, source, sourceIndex, predLabel, path):
+        sess = tf.Session()
+        K.set_session(sess)
+        
         self.sess = sess
         self.target = target
         self.source = source
@@ -77,7 +83,7 @@ class ModelSG(object):
 
         self.lr_div = 10
         self.lr_div_steps = set([300000, 400000])
-        self.l2_penaly = 1e-2
+        self.l2_penalty = 1e-2
 
         self.create_layers()
         
@@ -91,32 +97,32 @@ class ModelSG(object):
         space_dim = self.target.X.shape[1]
         
         # Inputs
-        X = tf.placeholder(tf.float32, name="data")
-        Y = tf.placeholder(tf.float32, name="labels")
+        X = tf.placeholder(tf.float32, shape=(None, self.source.X.shape[1]), name="data")
+        Y = tf.placeholder(tf.float32, shape=(None, self.source.X.shape[1]), name="labels")
         self.inputs = [X,Y]
         
-        calibInput = tf.keras.layers.InputLayer(input_shape=(space_dim,), input_tensor=X)
+        calibInput = Input(shape=(space_dim,), tensor=X)
         
         block1 = Layer(mmdNetLayerSizes[0], calibInput, 'block1', self.l2_penalty)
         
-        block2 = Layer(space_dim, block1, 'block2', self.l2_penalty)
+        block2 = Layer(space_dim, block1.output, 'block2', self.l2_penalty)
         
         with tf.variable_scope('block2_addition'):
-            block2_output = add(block2.output, calibInput)
+            block2_output = Add()([block2.output, calibInput])
         
         block3 = Layer(mmdNetLayerSizes[1], block2_output, 'block3', self.l2_penalty)
         
-        block4 = Layer(space_dim, block3, 'block4', self.l2_penalty)
+        block4 = Layer(space_dim, block3.output, 'block4', self.l2_penalty)
         
         with tf.variable_scope('block4_addition'):
-            block4_output = add(block4.output, block2_output)
+            block4_output = Add()([block4.output, block2_output])
 
         block5 = Layer(mmdNetLayerSizes[1], block4_output, 'block5', self.l2_penalty)
         
-        block6 = Layer(space_dim, block5, 'block6', self.l2_penalty)
+        block6 = Layer(space_dim, block5.output, 'block6', self.l2_penalty)
         
         with tf.variable_scope('block6_addition'):
-            block6_output = add(block6.output, block4_output)
+            block6_output = Add()([block6.output, block4_output])
             
         logits = Layer(space_dim, block6_output, 'block7', self.l2_penalty, out=True)
 
@@ -166,7 +172,8 @@ class ModelSG(object):
         self.learning_rate = tf.Variable(learning_rate, dtype=tf.float32, name="lr")
         self.reduce_lr = tf.assign(self.learning_rate, self.learning_rate/self.lr_div, name="lr_decrease")
 
-        #self.pred_loss = tf.losses.softmax_cross_entropy(onehot_labels=self.inputs[1], logits=self.layers[3].output, scope="prediction_loss")
+        #self.pred_loss = tf.losses.cosine_distance(labels=targetXMMD, predictions=self.layers[6].output, scope="prediction_loss", axis=1, reduction=tf.losses.Reduction.MEAN)
+        #self.pred_loss = tf.losses.softmax_cross_entropy(onehot_labels=self.inputs[1], logits=self.layers[6].output, scope="prediction_loss")
         self.pred_loss = cf.MMD(self.layers[6].output, targetXMMD, MMDTargetValidation_split = 0.1).KerasCost([],[])
         
         block7_opt, sg7_opt = self.train_layer_n(5, self.pred_loss, 5, self.pred_loss, 6, p=False)
@@ -220,51 +227,42 @@ class ModelSG(object):
         
         sourceYMMD = np.reshape(sourceYMMD, (-1, 1))
         
-        sourceLabels = np.zeros(sourceXMMD.shape[0])
+        sourceLabels = np.zeros(sourceXMMD.shape)
         
         self.prepare_training(learning_rate, targetXMMD)
         with self.sess.as_default():
             init = tf.global_variables_initializer()
             self.sess.run(init)
+            print('Initial MMD: ', self.test(batch_size, targetXMMD))
             for i in tqdm(range(1,iterations+1)):
                 if i in self.lr_div_steps: self.sess.run(self.reduce_lr)
                 
                 batch_indices = K.cast(K.round(K.random_uniform(shape=tuple([batch_size]), minval=0, 
                                                  maxval=sourceXMMD.shape[0]-1)),IntType)
-                batchX = K.gather(sourceXMMD,batch_indices)
-                batchY = K.gather(sourceLabels,batch_indices)
+                batchX = sourceXMMD[K.eval(batch_indices)]
+                batchY = sourceLabels[K.eval(batch_indices)]
                 
                 X,Y = self.inputs[0], self.inputs[1]
                 
                 for d in self.decoupled_training: 
-                    if random.random() <= update_prob: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
+                    if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
 
-                """
-                if i % 50000 == 0:
-                    print('Iteration:',i)
-                    self.test(batch_size)
-                """
+                if i % 100 == 0:
+                    print('MMD after ',i,': ', self.test(batch_size, targetXMMD))
     
-    def test(self, batch_size):
+    def test(self, batch_size, targetXMMD):
         """Tests the model on MNIST.test dataset
 
         Args:
             batch_size: An integer for the size of the batches.
         """
         X,Y = self.inputs[0], self.inputs[1]
-        preds = tf.nn.softmax(self.layers[3].output, name="predictions")
-        correct_preds = tf.equal(tf.argmax(preds,1), tf.argmax(Y,1), name="correct_predictions")
-        accuracy = tf.reduce_sum(tf.cast(correct_preds,tf.float32), name="correct_prediction_count") / batch_size
-        with self.sess.as_default():
-            n_batches = int(self.dataset.test.num_examples/batch_size)
-            test_accuracy = 0
-            test_loss = 0
-            for _ in range(n_batches):
-                Xb, Yb = self.dataset.test.next_batch(batch_size)
-                batch_accuracy, batch_loss = self.sess.run([accuracy, self.pred_loss], feed_dict={X:Xb,Y:Yb})
-                test_loss += batch_loss
-                test_accuracy += batch_accuracy
-            print ('Test Loss:',test_loss/n_batches)
-            print('Test Accuracy:', test_accuracy/n_batches)
+        preds = self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
+        
+        final_mmd = K.eval(cf.MMD(preds, self.target.X).cost(
+            K.variable(value=preds[np.random.randint(low=0, high=self.source.X.shape[0], size = batch_size)]),
+            K.variable(value=self.target.X[np.random.randint(low=0, high=self.target.X.shape[0], size = batch_size)])))
+
+        return final_mmd
 # -*- coding: utf-8 -*-
 

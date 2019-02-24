@@ -7,8 +7,10 @@ train a feed-forward neural network classifier on the reference sample;
 sample; (3) predict the cell label information for each remaining sample.
 
 Created on Jul 30, 2016
+Author: urishaham, huaminli
 
-@author: urishaham, huaminli
+Updated by Lukas Hanincik
+Updated on 24.02.2019
 '''
 from keras import backend as K
 import numpy as np
@@ -20,7 +22,8 @@ from Util import denoisingAutoEncoder as dae
 from Util import FileIO as io
 from Util import feedforwadClassifier as net
 from Util import MMDNet as mmd
-from Util import MMDNet_SG as SgMMD
+
+from Util.MMDNet_SG import ModelSG
 
 
 class Sample:
@@ -187,7 +190,8 @@ for i in np.arange(testIndex.size):
             calibrateSource = mmd.calibrate(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
             """
-            calibrateSource = SgMMD.ModelSG(denoiseTarget, denoiseSource,
+
+            calibrateSource = ModelSG(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
             
         print('Run the classifier on source ', str(sourceIndex),
