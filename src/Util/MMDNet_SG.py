@@ -82,12 +82,15 @@ class ModelSG(object):
         self.path = path
 
         self.lr_div = 10
-        self.lr_div_steps = set([300000, 400000])
+        self.lr_div_steps = 15.0
         self.l2_penalty = 1e-2
+        
+        self.testingData = []
 
         self.create_layers()
         
         self.train(500, 1000, 0.2, 3e-5) # number of epochs, batch size, update probability, learning rate
+        # try lerning rate 1e-5, 1e-3
 
     def create_layers(self):
         """Creates normal and synthetic layers for the graph
@@ -235,7 +238,8 @@ class ModelSG(object):
             self.sess.run(init)
             print('Initial MMD: ', self.test(batch_size, targetXMMD))
             for i in tqdm(range(1,iterations+1)):
-                if i in self.lr_div_steps: self.sess.run(self.reduce_lr)
+                if i % self.lr_div_steps == 0:
+                    self.sess.run(self.reduce_lr)
                 
                 batch_indices = K.cast(K.round(K.random_uniform(shape=tuple([batch_size]), minval=0, 
                                                  maxval=sourceXMMD.shape[0]-1)),IntType)
@@ -247,8 +251,10 @@ class ModelSG(object):
                 for d in self.decoupled_training: 
                     if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
 
-                if i % 100 == 0:
-                    print('MMD after ',i,': ', self.test(batch_size, targetXMMD))
+                if i % 50 == 0:
+                    testingData = self.test(batch_size, targetXMMD)
+                    self.testingData.append([i, testingData])
+                    print('MMD after ',i,': ', testingData)
     
     def test(self, batch_size, targetXMMD):
         """Tests the model on MNIST.test dataset
