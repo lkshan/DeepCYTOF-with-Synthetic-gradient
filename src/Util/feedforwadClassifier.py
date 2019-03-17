@@ -127,6 +127,7 @@ def trainClassifier(trainSample, mode = 'None', i = 0,
 def prediction(testSample, mode, i, net):
     # Labels start from 0.
     y_test = np.int_(testSample.y)
+
     
     # Special case in GvHD: label in those files are 0,1,3,4 with no 2.
     if mode == 'GvHD' and (i == 5 or i == 9 or 

@@ -14,6 +14,7 @@ Updated on 24.02.2019
 '''
 from keras import backend as K
 import numpy as np
+import pandas as pd
 import os.path
 
 from Util import CostFunctions as cf
@@ -191,9 +192,47 @@ for i in np.arange(testIndex.size):
                                             sourceIndex, predLabel, dataSet[choice])
             """
 
-            calibrateSource = ModelSG(denoiseTarget, denoiseSource,
+            calibrateSource_SG = ModelSG(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
+            """
+            calibrateSource = ModelSG(denoiseTarget, denoiseSource,
+                                            sourceIndex, predLabel, dataSet[choice], False)
+            """
+            """
+            testName_SG = 'LR_CHANGE_SG_MMD_2'
+            testName = 'LR_CHANGE_BPROP_MMD_2'
+
+            pd.DataFrame(calibrateSource_SG.testingData).to_excel(os.path.join('TestingData', testName_SG+'.xlsx'), index=False)
             
+            pd.DataFrame({
+                    'lr_div': [calibrateSource_SG.lr_div],
+                    'lr_div_steps': [calibrateSource.lr_div_steps],
+                    'l2_penalty': [calibrateSource.l2_penalty],
+                    'itterations': [calibrateSource.itterations],
+                    'batch_size': [calibrateSource.batch_size],
+                    'sg_pp': [calibrateSource.sg_pp],
+                    'learning_rate': [calibrateSource.init_lr]
+                    }).to_excel(os.path.join('TestingData', testName_SG+'_config.xlsx'), index=False)
+
+            
+            pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData', testName+'.xlsx'), index=False)
+            
+            pd.DataFrame({
+                    'lr_div': [calibrateSource.lr_div],
+                    'lr_div_steps': [calibrateSource.lr_div_steps],
+                    'l2_penalty': [calibrateSource.l2_penalty],
+                    'itterations': [calibrateSource.itterations],
+                    'batch_size': [calibrateSource.batch_size],
+                    'sg_pp': [calibrateSource.sg_pp],
+                    'learning_rate': [calibrateSource.init_lr]
+                    }).to_excel(os.path.join('TestingData', testName+'_config.xlsx'), index=False)
+            """
+            
+            
+        acc_SG, F1_SG, predLabel_SG = net.prediction(calibrateSource_SG.calibratedData,
+                                                mode, i,
+                                           cellClassifier)
+        
         print('Run the classifier on source ', str(sourceIndex),
           'with calibration')
         acc[i,1], F1[i,1], predLabell = net.prediction(calibrateSource,

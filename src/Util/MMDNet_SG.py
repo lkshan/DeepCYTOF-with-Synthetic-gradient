@@ -15,6 +15,13 @@ from tensorflow.train import RMSPropOptimizer
 from Util import CostFunctions as cf
 IntType = 'int32'
 
+class Sample:
+    X = None
+    y = None
+    def __init__(self, X, y = None):
+        self.X = X
+        self.y = y
+
 class Layer(object):
     """ Layer class for creating dense layers.
 
@@ -70,7 +77,7 @@ class ModelSG(object):
         sess: A tf.sess() that will be used by the model.
     """
     
-    def __init__(self, target, source, sourceIndex, predLabel, path):
+    def __init__(self, target, source, sourceIndex, predLabel, path, sg_only=True):
         sess = tf.Session()
         K.set_session(sess)
         
@@ -80,17 +87,24 @@ class ModelSG(object):
         self.sourceIndex = sourceIndex
         self.predLabel = predLabel
         self.path = path
+        self.sg_only = sg_only
 
         self.lr_div = 10
-        self.lr_div_steps = 15.0
+        self.lr_div_steps = 30
         self.l2_penalty = 1e-2
+        self.itterations = 500
+        self.batch_size = 1000
+        self.sg_pp = .2
+        self.init_lr = 3e-4
         
         self.testingData = []
 
         self.create_layers()
         
-        self.train(500, 1000, 0.2, 3e-5) # number of epochs, batch size, update probability, learning rate
+        self.train(self.itterations, self.batch_size, self.sg_pp, self.init_lr) # number of epochs, batch size, update probability, learning rate
         # try lerning rate 1e-5, 1e-3
+        
+        self.calibratedData = Sample(self.finalCalibration(), self.source.y)
 
     def create_layers(self):
         """Creates normal and synthetic layers for the graph
@@ -233,6 +247,7 @@ class ModelSG(object):
         sourceLabels = np.zeros(sourceXMMD.shape)
         
         self.prepare_training(learning_rate, targetXMMD)
+        
         with self.sess.as_default():
             init = tf.global_variables_initializer()
             self.sess.run(init)
@@ -248,13 +263,17 @@ class ModelSG(object):
                 
                 X,Y = self.inputs[0], self.inputs[1]
                 
-                for d in self.decoupled_training: 
-                    if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
-
+                if self.sg_only :
+                    for d in self.decoupled_training: 
+                        if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
+                else:
+                    self.sess.run(self.decoupled_training[len(self.decoupled_training)-1], feed_dict={X:batchX,Y:batchY})
+                    
+                    
                 if i % 50 == 0:
                     testingData = self.test(batch_size, targetXMMD)
-                    self.testingData.append([i, testingData])
-                    print('MMD after ',i,': ', testingData)
+                    self.testingData.append({'itteration':i, 'MMD': testingData})
+                    print('MMD after ' + str(i) + ': ' + str(testingData))
     
     def test(self, batch_size, targetXMMD):
         """Tests the model on MNIST.test dataset
@@ -270,5 +289,9 @@ class ModelSG(object):
             K.variable(value=self.target.X[np.random.randint(low=0, high=self.target.X.shape[0], size = batch_size)])))
 
         return final_mmd
+    
+    def finalCalibration(self):
+        X,Y = self.inputs[0], self.inputs[1]
+        return self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
 # -*- coding: utf-8 -*-
 
