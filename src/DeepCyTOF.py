@@ -48,6 +48,10 @@ l2_penalty        - The regularization parameter to construct the classifier.
 keepProb          - The keep probability for each single cell to be used as
                     the training set of de-noising autoencoder.
 '''
+
+import tensorflow as tf
+print(tf.test.gpu_device_name())
+
 dataSet = ['MultiCenter_16sample',
            '56_unnormalized', '56_normalized',
            'old&young_unnomral', 'old&young_normal']
@@ -191,30 +195,30 @@ for i in np.arange(testIndex.size):
             calibrateSource = mmd.calibrate(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
             """
-
+            """
             calibrateSource_SG = ModelSG(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice])
             """
             calibrateSource = ModelSG(denoiseTarget, denoiseSource,
                                             sourceIndex, predLabel, dataSet[choice], False)
-            """
-            """
+            
+            
             testName_SG = 'LR_CHANGE_SG_MMD_2'
-            testName = 'LR_CHANGE_BPROP_MMD_2'
+            testName = 'INIT_TEST_BPROP'
 
-            pd.DataFrame(calibrateSource_SG.testingData).to_excel(os.path.join('TestingData', testName_SG+'.xlsx'), index=False)
+            pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData','IIT_SRC', testName+'.xlsx'), index=False)
             
             pd.DataFrame({
-                    'lr_div': [calibrateSource_SG.lr_div],
+                    'lr_div': [calibrateSource.lr_div],
                     'lr_div_steps': [calibrateSource.lr_div_steps],
                     'l2_penalty': [calibrateSource.l2_penalty],
                     'itterations': [calibrateSource.itterations],
                     'batch_size': [calibrateSource.batch_size],
                     'sg_pp': [calibrateSource.sg_pp],
                     'learning_rate': [calibrateSource.init_lr]
-                    }).to_excel(os.path.join('TestingData', testName_SG+'_config.xlsx'), index=False)
+                    }).to_excel(os.path.join('TestingData', 'IIT_SRC', testName+'_CONFIG.xlsx'), index=False)
 
-            
+            """
             pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData', testName+'.xlsx'), index=False)
             
             pd.DataFrame({
@@ -229,7 +233,7 @@ for i in np.arange(testIndex.size):
             """
             
             
-        acc_SG, F1_SG, predLabel_SG = net.prediction(calibrateSource_SG.calibratedData,
+        acc_SG, F1_SG, predLabel_SG = net.prediction(calibrateSource.calibratedData,
                                                 mode, i,
                                            cellClassifier)
         

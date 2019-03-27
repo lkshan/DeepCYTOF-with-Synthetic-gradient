@@ -90,12 +90,12 @@ class ModelSG(object):
         self.sg_only = sg_only
 
         self.lr_div = 10
-        self.lr_div_steps = 30
+        self.lr_div_steps = 50
         self.l2_penalty = 1e-2
-        self.itterations = 500
+        self.itterations = 2500
         self.batch_size = 1000
         self.sg_pp = .2
-        self.init_lr = 3e-4
+        self.init_lr = 3e-5
         
         self.testingData = []
 
@@ -211,6 +211,8 @@ class ModelSG(object):
                                    [block6_opt, sg6_opt],
                                    [block7_opt, sg7_opt]]
 
+        self.bpropOptimizer = RMSPropOptimizer(learning_rate=self.learning_rate).minimize(self.pred_loss)
+
     def train(self, iterations, batch_size, update_prob, learning_rate):
         """Trains the model in a decoupled way on a MNIST dataset.
         
@@ -251,7 +253,10 @@ class ModelSG(object):
         with self.sess.as_default():
             init = tf.global_variables_initializer()
             self.sess.run(init)
-            print('Initial MMD: ', self.test(batch_size, targetXMMD))
+            testingData = self.test(batch_size, targetXMMD)
+            self.testingData.append({'itteration':0, 'MMD': testingData})
+            print('\n')
+            print('Initial MMD: ', testingData)
             for i in tqdm(range(1,iterations+1)):
                 if i % self.lr_div_steps == 0:
                     self.sess.run(self.reduce_lr)
@@ -267,12 +272,13 @@ class ModelSG(object):
                     for d in self.decoupled_training: 
                         if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
                 else:
-                    self.sess.run(self.decoupled_training[len(self.decoupled_training)-1], feed_dict={X:batchX,Y:batchY})
+                    self.sess.run(self.bpropOptimizer, feed_dict={X:batchX,Y:batchY})
                     
                     
                 if i % 50 == 0:
                     testingData = self.test(batch_size, targetXMMD)
                     self.testingData.append({'itteration':i, 'MMD': testingData})
+                    print('\n')
                     print('MMD after ' + str(i) + ': ' + str(testingData))
     
     def test(self, batch_size, targetXMMD):

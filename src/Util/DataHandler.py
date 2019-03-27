@@ -12,7 +12,7 @@ from Util import FileIO as io
 from Util import MMDNet as mmd
 import os.path
 import sklearn.preprocessing as prep
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 
 
 class Sample:

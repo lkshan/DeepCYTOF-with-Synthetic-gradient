@@ -6,7 +6,7 @@ Created on Jul 13, 2016
 import sys
 from keras import backend as K
 import numpy as np
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
 IntType = 'int32'
 FloatType = 'float32'
