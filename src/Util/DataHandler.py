@@ -13,6 +13,8 @@ from Util import MMDNet as mmd
 import os.path
 import sklearn.preprocessing as prep
 from sklearn.model_selection import train_test_split
+import pandas as pd
+import random
 
 
 class Sample:
@@ -33,7 +35,7 @@ def standard_scale(sample, preprocessor = None):
     
     return sample, preprocessor
 
-def loadDeepCyTOFData(dataPath, dataIndex, relevantMarkers, mode, skip_header = 0):
+def loadDeepCyTOFData(dataPath, dataIndex, relevantMarkers, mode, skip_header = 0, labels=True):
     if mode == 'CSV':
         data_filename = dataPath + '/sample' + str(dataIndex)+'.csv'
         X = genfromtxt(os.path.join(io.DeepLearningRoot(),data_filename), delimiter=',', skip_header=skip_header)
@@ -41,10 +43,15 @@ def loadDeepCyTOFData(dataPath, dataIndex, relevantMarkers, mode, skip_header = 
         data_filename = dataPath + '/sample' + str(dataIndex)+'.fcs'
         _, X = fcsparser.parse(os.path.join(io.DeepLearningRoot() ,data_filename), reformat_meta=True)
         X = X.as_matrix()
-    X = X[:, relevantMarkers]    
-    label_filename = dataPath + '/labels' + str(dataIndex) + '.csv'
-    labels = genfromtxt(os.path.join(io.DeepLearningRoot(),label_filename), delimiter=',')
-    labels = np.int_(labels)
+    X = X[:, relevantMarkers]
+    if labels:
+        label_filename = dataPath + '/labels' + str(dataIndex) + '.csv'
+        labels = genfromtxt(os.path.join(io.DeepLearningRoot(),label_filename), delimiter=',')
+        labels = np.int_(labels)
+    else:
+        labels = np.zeros(len(X))
+        labels = np.int_(np.expand_dims(labels, -1))
+        
     sample = Sample(X, labels)
     
     return sample
@@ -56,10 +63,10 @@ def splitData(sample, test_size):
     testSample = Sample(data_test, label_test)
     return trainSample, testSample
 
-def chooseReferenceSample(dataPath, dataIndex, relevantMarkers, mode, choice):
+def chooseReferenceSample(dataPath, dataIndex, relevantMarkers, mode, choice, skip_header, labels):
     samples = []
     for i in dataIndex:
-        sample = loadDeepCyTOFData(dataPath, i, relevantMarkers, mode)
+        sample = loadDeepCyTOFData(dataPath, i, relevantMarkers, mode, skip_header = skip_header, labels=labels)
         sample = preProcessSamplesCyTOFData(sample)
         samples.append(sample)
         
@@ -76,3 +83,19 @@ def chooseReferenceSample(dataPath, dataIndex, relevantMarkers, mode, choice):
             refSampleInd = np.argmin(avg)
         
     return refSampleInd
+
+def uniformSamples(samples):
+    df = pd.DataFrame(samples.X)
+    df['y'] = pd.DataFrame(samples.y)
+    categories = pd.unique(df['y'])
+    freq = pd.DataFrame(df['y'].value_counts())
+    minIndex = freq[freq['y'] == freq.min().values[0]].index.values[0]
+    output = df[df['y'] == minIndex]
+    categories = np.delete(categories, np.where(categories == minIndex))
+    for cat in categories:
+        tmp = df[df['y'] == cat].reset_index(drop=True)
+        output = output.append(tmp.loc[random.sample(range(freq.loc[cat].values[0]), freq.min().values[0])])
+    
+    output = output.sample(frac=1).reset_index(drop=True)
+    return Sample(output.loc[:, output.columns != 'y'].values, output['y'].values)
+    

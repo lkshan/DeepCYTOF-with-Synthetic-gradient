@@ -54,11 +54,11 @@ print(tf.test.gpu_device_name())
 
 dataSet = ['MultiCenter_16sample',
            '56_unnormalized', '56_normalized',
-           'old&young_unnomral', 'old&young_normal']
+           'old&young_unnomral', 'old&young_normal', 'data_raw_csv']
 
 isCalibrate = True
 denoise = True
-loadModel = True
+loadModel = False
 
 hiddenLayersSizes = [12,6,3]
 activation = 'softplus'
@@ -75,8 +75,11 @@ Make your choice here - an integer from 0 to 4.
 4: 134 normalized
 '''
 choice = 0
+skip_header = 0
+labels = True
 #dataPath = '/home/hl475/Documents/deepcytof/Data/' + dataSet[choice]
 dataPath = os.path.join(os.path.dirname(os.path.realpath(__file__)),'..', 'Data', dataSet[choice])
+#dataPath = os.path.join(os.path.dirname(os.path.realpath(__file__)),'..', '..', '..', 'cytof_data', dataSet[choice])
 if choice == 0:
     dataIndex = np.arange(1,16+1)
     trainIndex = dataIndex
@@ -105,6 +108,19 @@ elif choice == 3 or choice == 4:
         mode = 'CSV'
     numClasses = 5
     keepProb = .9
+elif choice == 5:
+    dataIndex = np.arange(1,19+1)
+    trainIndex = dataIndex
+    testIndex = dataIndex
+    relevantMarkers = np.asarray([12, 17, 18, 20, 22, 23, 24, 26, 28, 31, 36, 39, 41])-1
+    mode = 'CSV'
+    numClasses = 5
+    keepProb = .9
+    skip_header = 1
+    labels = False
+
+sess = tf.Session()
+K.set_session(sess)
 
 '''
 Choose the reference sample.
@@ -112,7 +128,7 @@ Choose the reference sample.
 print('Choose the reference sample between ' + str(trainIndex))
 refSampleInd = dh.chooseReferenceSample(dataPath, trainIndex,
                                         relevantMarkers, mode,
-                                        choice)
+                                        choice, skip_header, labels)
 
 print('Load the target ' + str(trainIndex[refSampleInd])) 
 target = dh.loadDeepCyTOFData(dataPath, trainIndex[refSampleInd],
@@ -120,6 +136,8 @@ target = dh.loadDeepCyTOFData(dataPath, trainIndex[refSampleInd],
 
 # Pre-process sample.
 target = dh.preProcessSamplesCyTOFData(target)
+
+target = dh.uniformSamples(target)
 
 '''
 Train the de-noising auto encoder.
@@ -136,6 +154,7 @@ Train the feed-forward classifier on (de-noised) target.
 denoiseTarget, preprocessor = dh.standard_scale(denoiseTarget,
                                                 preprocessor = None)
 
+loadModel = False
 if loadModel:
     from keras.models import load_model
     cellClassifier = load_model(os.path.join(io.DeepLearningRoot(),
@@ -200,11 +219,11 @@ for i in np.arange(testIndex.size):
                                             sourceIndex, predLabel, dataSet[choice])
             """
             calibrateSource = ModelSG(denoiseTarget, denoiseSource,
-                                            sourceIndex, predLabel, dataSet[choice], False)
+                                            sourceIndex, predLabel, dataSet[choice], cellClassifier, sess, sg_only=True)
             
             
-            testName_SG = 'LR_CHANGE_SG_MMD_2'
-            testName = 'INIT_TEST_BPROP'
+            testName_SG = 'INIT_TEST_SG_2'
+            testName = 'FINAL'
 
             pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData','IIT_SRC', testName+'.xlsx'), index=False)
             

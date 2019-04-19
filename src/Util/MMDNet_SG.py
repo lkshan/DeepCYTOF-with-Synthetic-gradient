@@ -1,6 +1,7 @@
 import random
 import tensorflow as tf
 import numpy as np
+import copy
 
 from tqdm import tqdm
 
@@ -9,10 +10,13 @@ from keras.layers import Dense, BatchNormalization, Activation, Input, Add
 from keras.regularizers import l2
 from keras.models import Model
 from keras import optimizers as opt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score
 
 from tensorflow.train import RMSPropOptimizer
 
 from Util import CostFunctions as cf
+from Util import feedforwadClassifier as net
 IntType = 'int32'
 
 class Sample:
@@ -77,7 +81,7 @@ class ModelSG(object):
         sess: A tf.sess() that will be used by the model.
     """
     
-    def __init__(self, target, source, sourceIndex, predLabel, path, sg_only=True):
+    def __init__(self, target, source, sourceIndex, predLabel, path, classifier, classifierSession, sg_only=True):
         sess = tf.Session()
         K.set_session(sess)
         
@@ -88,16 +92,20 @@ class ModelSG(object):
         self.predLabel = predLabel
         self.path = path
         self.sg_only = sg_only
+        self.classifier = classifier
+        self.classifierSession = classifierSession
+        self.the_best = None
 
         self.lr_div = 10
-        self.lr_div_steps = 50
+        self.lr_div_steps = 60
         self.l2_penalty = 1e-2
-        self.itterations = 2500
+        self.itterations = 300
         self.batch_size = 1000
         self.sg_pp = .2
-        self.init_lr = 3e-5
+        self.init_lr = 1e-4
         
         self.testingData = []
+        self.f1_scores = []
 
         self.create_layers()
         
@@ -119,6 +127,8 @@ class ModelSG(object):
         self.inputs = [X,Y]
         
         calibInput = Input(shape=(space_dim,), tensor=X)
+        self.calibInput = calibInput
+        #calibInput = Dense(space_dim, activation=None,)(X)
         
         block1 = Layer(mmdNetLayerSizes[0], calibInput, 'block1', self.l2_penalty)
         
@@ -146,12 +156,20 @@ class ModelSG(object):
         self.layers = [block1, block2, block3, block4, block5, block6, logits]
 
         # sg layers
+        """
         synth_b1 = Layer(mmdNetLayerSizes[0], [block1.output,Y], 'sg2', sg=True)
         synth_b2 = Layer(space_dim, [block2.output,Y], 'sg3', sg=True)
         synth_b3 = Layer(mmdNetLayerSizes[1], [block3.output,Y], 'sg4', sg=True)
         synth_b4 = Layer(space_dim, [block4.output,Y], 'sg5', sg=True)
         synth_b5 = Layer(mmdNetLayerSizes[1], [block5.output,Y], 'sg6', sg=True)
         synth_b6 = Layer(space_dim, [block6.output,Y], 'sg7', sg=True)
+        """
+        synth_b1 = Layer(mmdNetLayerSizes[0], [block1.output], 'sg2', sg=True)
+        synth_b2 = Layer(space_dim, [block2.output], 'sg3', sg=True)
+        synth_b3 = Layer(mmdNetLayerSizes[1], [block3.output], 'sg4', sg=True)
+        synth_b4 = Layer(space_dim, [block4.output], 'sg5', sg=True)
+        synth_b5 = Layer(mmdNetLayerSizes[1], [block5.output], 'sg6', sg=True)
+        synth_b6 = Layer(space_dim, [block6.output], 'sg7', sg=True)
         
         self.synth_layers = [synth_b1, synth_b2, synth_b3, synth_b4, synth_b5, synth_b6]
     
@@ -239,7 +257,7 @@ class ModelSG(object):
         p = np.random.permutation(n)
         toTake = p[range(int(.2*n))] 
         sourceXMMD = self.source.X[toTake]
-        sourceYMMD = self.predLabel[toTake]
+        sourceYMMD = self.source.y[toTake]
         
         sourceXMMD = sourceXMMD[sourceYMMD!=0]
         sourceYMMD = sourceYMMD[sourceYMMD!=0]
@@ -249,6 +267,13 @@ class ModelSG(object):
         sourceLabels = np.zeros(sourceXMMD.shape)
         
         self.prepare_training(learning_rate, targetXMMD)
+        
+        # split a sourceXMMD
+        X_train, X_test_valid, y_train, y_test_valid = train_test_split(sourceXMMD, sourceYMMD, test_size=2*batch_size, random_state=42)
+        X_test, X_valid, y_test, y_valid = train_test_split(X_test_valid, y_test_valid, test_size=batch_size, random_state=28)
+        
+        self.f1 = self.checkState(X_valid, y_valid)
+        self.f1_scores.append(self.f1)
         
         with self.sess.as_default():
             init = tf.global_variables_initializer()
@@ -262,9 +287,10 @@ class ModelSG(object):
                     self.sess.run(self.reduce_lr)
                 
                 batch_indices = K.cast(K.round(K.random_uniform(shape=tuple([batch_size]), minval=0, 
-                                                 maxval=sourceXMMD.shape[0]-1)),IntType)
-                batchX = sourceXMMD[K.eval(batch_indices)]
+                                                 maxval=X_train.shape[0]-1)),IntType)
+                batchX = X_train[K.eval(batch_indices)]
                 batchY = sourceLabels[K.eval(batch_indices)]
+                #batchY = self.getTargetsByClass(K.eval(batch_indices))
                 
                 X,Y = self.inputs[0], self.inputs[1]
                 
@@ -273,13 +299,23 @@ class ModelSG(object):
                         if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
                 else:
                     self.sess.run(self.bpropOptimizer, feed_dict={X:batchX,Y:batchY})
-                    
-                    
-                if i % 50 == 0:
+                
+                if i % 10 == 0:
+                    f1_score = self.checkState(X_valid, y_valid)
+                    if f1_score > self.f1 :
+                        self.f1 = f1_score
+                        self.the_best = None
+    #                    self.the_best = copy.deepcopy(self)
+                    self.f1_scores.append(f1_score)
+                
+                if i % 30 == 0:
                     testingData = self.test(batch_size, targetXMMD)
                     self.testingData.append({'itteration':i, 'MMD': testingData})
                     print('\n')
                     print('MMD after ' + str(i) + ': ' + str(testingData))
+                    
+                if i % 100 == 0:
+                    print('ahoj')
     
     def test(self, batch_size, targetXMMD):
         """Tests the model on MNIST.test dataset
@@ -287,7 +323,7 @@ class ModelSG(object):
         Args:
             batch_size: An integer for the size of the batches.
         """
-        X,Y = self.inputs[0], self.inputs[1]
+        X = self.inputs[0]
         preds = self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
         
         final_mmd = K.eval(cf.MMD(preds, self.target.X).cost(
@@ -297,7 +333,23 @@ class ModelSG(object):
         return final_mmd
     
     def finalCalibration(self):
-        X,Y = self.inputs[0], self.inputs[1]
+        X = self.inputs[0]
         return self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
+    
+    def checkState(self, X_valid, y_valid):
+        
+        X = self.inputs[0]
+        
+        model = Model(inputs=X, outputs=self.layers[6].output)(tf.convert_to_tensor(X_valid))
+        
+        calibrated = self.sess.run(self.layers[6].output, feed_dict={X: X_valid})
+        with self.classifierSession.as_default():
+            predLabel_prob = self.classifier.predict(calibrated, verbose = 0)
+        predLabel = np.argmax(predLabel_prob, axis = 1) + 1
+        predLabel[np.max(predLabel_prob, axis = 1) < .4] = 0
+        predLabel = np.squeeze(predLabel)
+        
+        return f1_score(y_valid, predLabel, average="micro")
+        
 # -*- coding: utf-8 -*-
 
