@@ -65,9 +65,12 @@ class Layer(object):
                 if not out:
                     self.output = BatchNormalization()(inputs)
                     self.output = Activation('relu')(self.output)
-                else: self.output = inputs
-                self.output = Dense(units, activation='linear',
+                    self.output = Dense(units, activation='linear',
                       W_regularizer=l2(l2_penalty), init = 'random_uniform')(self.output)
+                else: 
+                    self.output = inputs
+                    self.output = Dense(units, activation='linear',
+                      W_regularizer=l2(l2_penalty), init = 'ones')(self.output)
         self.layer_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope=self.name)
 
 class ModelSG(object):
@@ -81,28 +84,26 @@ class ModelSG(object):
         sess: A tf.sess() that will be used by the model.
     """
     
-    def __init__(self, target, source, sourceIndex, predLabel, path, classifier, classifierSession, sg_only=True):
+    def __init__(self, target, source, predLabel, classifier, classifierSession, sg_only=True):
         sess = tf.Session()
         K.set_session(sess)
         
         self.sess = sess
         self.target = target
         self.source = source
-        self.sourceIndex = sourceIndex
         self.predLabel = predLabel
-        self.path = path
         self.sg_only = sg_only
         self.classifier = classifier
         self.classifierSession = classifierSession
         self.the_best = None
 
         self.lr_div = 10
-        self.lr_div_steps = 60
+        self.lr_div_steps = 20
         self.l2_penalty = 1e-2
         self.itterations = 300
         self.batch_size = 1000
         self.sg_pp = .2
-        self.init_lr = 1e-4
+        self.init_lr = 1e-5
         
         self.testingData = []
         self.f1_scores = []
@@ -194,7 +195,8 @@ class ModelSG(object):
             layer_opt = RMSPropOptimizer(learning_rate=self.learning_rate).apply_gradients(layer_gv)
         with tf.variable_scope(self.synth_layers[d_hat_m].name):
             d_m = layer_grads[0]
-            sg_loss = tf.divide(tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m), class_loss)
+            #sg_loss = tf.divide(tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m), 1)
+            sg_loss = tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m)
             sg_opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(sg_loss, var_list=self.synth_layers[d_hat_m].layer_vars)
         return layer_opt, sg_opt
     
@@ -257,8 +259,9 @@ class ModelSG(object):
         p = np.random.permutation(n)
         toTake = p[range(int(.2*n))] 
         sourceXMMD = self.source.X[toTake]
-        sourceYMMD = self.source.y[toTake]
-        
+#        sourceYMMD = self.source.y[toTake]
+        sourceYMMD = self.predLabel[toTake]
+
         sourceXMMD = sourceXMMD[sourceYMMD!=0]
         sourceYMMD = sourceYMMD[sourceYMMD!=0]
         

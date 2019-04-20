@@ -63,7 +63,7 @@ def splitData(sample, test_size):
     testSample = Sample(data_test, label_test)
     return trainSample, testSample
 
-def chooseReferenceSample(dataPath, dataIndex, relevantMarkers, mode, choice, skip_header, labels):
+def chooseReferenceSample(dataPath, dataIndex, relevantMarkers, mode, skip_header, labels, choice=0):
     samples = []
     for i in dataIndex:
         sample = loadDeepCyTOFData(dataPath, i, relevantMarkers, mode, skip_header = skip_header, labels=labels)

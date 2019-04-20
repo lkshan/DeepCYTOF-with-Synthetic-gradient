@@ -128,7 +128,7 @@ Choose the reference sample.
 print('Choose the reference sample between ' + str(trainIndex))
 refSampleInd = dh.chooseReferenceSample(dataPath, trainIndex,
                                         relevantMarkers, mode,
-                                        choice, skip_header, labels)
+                                        skip_header, labels)
 
 print('Load the target ' + str(trainIndex[refSampleInd])) 
 target = dh.loadDeepCyTOFData(dataPath, trainIndex[refSampleInd],
@@ -219,7 +219,7 @@ for i in np.arange(testIndex.size):
                                             sourceIndex, predLabel, dataSet[choice])
             """
             calibrateSource = ModelSG(denoiseTarget, denoiseSource,
-                                            sourceIndex, predLabel, dataSet[choice], cellClassifier, sess, sg_only=True)
+                                            predLabel, cellClassifier, sess, sg_only=True)
             
             
             testName_SG = 'INIT_TEST_SG_2'
