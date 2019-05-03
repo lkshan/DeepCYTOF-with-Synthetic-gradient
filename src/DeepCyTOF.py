@@ -58,7 +58,7 @@ dataSet = ['MultiCenter_16sample',
 
 isCalibrate = True
 denoise = True
-loadModel = False
+loadModel = True
 
 hiddenLayersSizes = [12,6,3]
 activation = 'softplus'
@@ -154,7 +154,7 @@ Train the feed-forward classifier on (de-noised) target.
 denoiseTarget, preprocessor = dh.standard_scale(denoiseTarget,
                                                 preprocessor = None)
 
-loadModel = False
+#loadModel = False
 if loadModel:
     from keras.models import load_model
     cellClassifier = load_model(os.path.join(io.DeepLearningRoot(),

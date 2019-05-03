@@ -13,9 +13,6 @@ from keras.callbacks import LearningRateScheduler
 import numpy as np
 from Util import Monitoring as mn
 import sklearn.metrics
-import matplotlib
-import pylab as plt
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import pyplot as plt1
 import math
 import random

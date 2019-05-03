@@ -1,7 +1,6 @@
 import random
 import tensorflow as tf
 import numpy as np
-import copy
 
 from tqdm import tqdm
 
@@ -65,12 +64,12 @@ class Layer(object):
                 if not out:
                     self.output = BatchNormalization()(inputs)
                     self.output = Activation('relu')(self.output)
-                    self.output = Dense(units, activation='linear',
-                      W_regularizer=l2(l2_penalty), init = 'random_uniform')(self.output)
                 else: 
                     self.output = inputs
-                    self.output = Dense(units, activation='linear',
-                      W_regularizer=l2(l2_penalty), init = 'ones')(self.output)
+                    
+                self.output = Dense(units, activation='linear',
+                      W_regularizer=l2(l2_penalty), init = 'random_uniform')(self.output)
+                
         self.layer_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,scope=self.name)
 
 class ModelSG(object):
@@ -98,12 +97,12 @@ class ModelSG(object):
         self.the_best = None
 
         self.lr_div = 10
-        self.lr_div_steps = 20
+        self.lr_div_steps = 500
         self.l2_penalty = 1e-2
         self.itterations = 300
         self.batch_size = 1000
-        self.sg_pp = .2
-        self.init_lr = 1e-5
+        self.sg_pp = 1
+        self.init_lr = 1e-2
         
         self.testingData = []
         self.f1_scores = []
@@ -157,7 +156,7 @@ class ModelSG(object):
         self.layers = [block1, block2, block3, block4, block5, block6, logits]
 
         # sg layers
-        """
+        
         synth_b1 = Layer(mmdNetLayerSizes[0], [block1.output,Y], 'sg2', sg=True)
         synth_b2 = Layer(space_dim, [block2.output,Y], 'sg3', sg=True)
         synth_b3 = Layer(mmdNetLayerSizes[1], [block3.output,Y], 'sg4', sg=True)
@@ -171,7 +170,7 @@ class ModelSG(object):
         synth_b4 = Layer(space_dim, [block4.output], 'sg5', sg=True)
         synth_b5 = Layer(mmdNetLayerSizes[1], [block5.output], 'sg6', sg=True)
         synth_b6 = Layer(space_dim, [block6.output], 'sg7', sg=True)
-        
+        """
         self.synth_layers = [synth_b1, synth_b2, synth_b3, synth_b4, synth_b5, synth_b6]
     
     def train_layer_n(self, h_m, h_n, d_hat_m, class_loss, next_l, d_n=None, p=True):
@@ -195,8 +194,8 @@ class ModelSG(object):
             layer_opt = RMSPropOptimizer(learning_rate=self.learning_rate).apply_gradients(layer_gv)
         with tf.variable_scope(self.synth_layers[d_hat_m].name):
             d_m = layer_grads[0]
-            #sg_loss = tf.divide(tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m), 1)
-            sg_loss = tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m)
+            sg_loss = tf.divide(tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m), class_loss)
+            #sg_loss = tf.losses.mean_squared_error(self.synth_layers[d_hat_m].output, d_m)
             sg_opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(sg_loss, var_list=self.synth_layers[d_hat_m].layer_vars)
         return layer_opt, sg_opt
     
@@ -292,14 +291,16 @@ class ModelSG(object):
                 batch_indices = K.cast(K.round(K.random_uniform(shape=tuple([batch_size]), minval=0, 
                                                  maxval=X_train.shape[0]-1)),IntType)
                 batchX = X_train[K.eval(batch_indices)]
-                batchY = sourceLabels[K.eval(batch_indices)]
-                #batchY = self.getTargetsByClass(K.eval(batch_indices))
+                #batchY = sourceLabels[K.eval(batch_indices)]
+                batchY = sourceYMMD[K.eval(batch_indices)]
+                batchY = self.getTargetsByClass(batchY, batchX.shape)
                 
                 X,Y = self.inputs[0], self.inputs[1]
                 
                 if self.sg_only :
                     for d in self.decoupled_training: 
-                        if random.random() <= update_prob or True: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
+                        #if random.random() <= update_prob: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
+                        self.sess.run(d, feed_dict={X:batchX,Y:batchY})
                 else:
                     self.sess.run(self.bpropOptimizer, feed_dict={X:batchX,Y:batchY})
                 
@@ -353,6 +354,22 @@ class ModelSG(object):
         predLabel = np.squeeze(predLabel)
         
         return f1_score(y_valid, predLabel, average="micro")
+    
+    def getTargetsByClass(self, batch, shape):
+        target_classes = np.unique(self.target.y)
+        
+        target_by_classes = {}
+        for tClass in target_classes:
+            target_by_classes[tClass] = self.target.X[self.target.y == tClass]
+        
+        target = np.empty([shape[0], shape[1]])
+        batch = np.squeeze(batch)
+        for i, (k, v) in enumerate(target_by_classes.items()):
+            i = np.where(batch == k)
+            target[i] = v[np.asarray(np.random.randint(low=0, high=len(v), size=len(i[0])))]
+            
+        return target
+            
         
 # -*- coding: utf-8 -*-
 
