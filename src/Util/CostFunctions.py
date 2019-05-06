@@ -37,7 +37,7 @@ class MMD:
                  scales = None,
                  weights = None):
         if scales == None:
-            print("setting scales using KNN")
+            #print("setting scales using KNN")
             med = np.zeros(20)
             for ii in range(1,20):
                 sample = MMDTargetTrain[np.random.randint(MMDTargetTrain.shape[0], size=MMDTargetSampleSize),:]
@@ -47,10 +47,10 @@ class MMD:
                 med[ii]=np.median(distances[:,1:n_neighbors])
             med = np.median(med)  
             scales = [med/2, med, med*2]
-            print(scales)
+            #print(scales)
         scales = K.variable(value=np.asarray(scales))
         if weights == None:
-            print("setting all scale weights to 1")
+            #print("setting all scale weights to 1")
             weights = K.eval(K.shape(scales)[0])
         weights = K.variable(value=np.asarray(weights))
         self.MMDLayer =  MMDLayer

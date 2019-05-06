@@ -7,6 +7,7 @@ Created on Oct 10, 2016
 
 import fcsparser
 import numpy as np
+from operator import itemgetter
 from numpy import genfromtxt
 from Util import FileIO as io
 from Util import MMDNet as mmd
@@ -15,7 +16,7 @@ import sklearn.preprocessing as prep
 from sklearn.model_selection import train_test_split
 import pandas as pd
 import random
-
+import matplotlib.pyplot as plt
 
 class Sample:
     X = None
@@ -99,3 +100,43 @@ def uniformSamples(samples):
     output = output.sample(frac=1).reset_index(drop=True)
     return Sample(output.loc[:, output.columns != 'y'].values, output['y'].values)
     
+def generateOutput(model, labels, i, dataPath):
+    
+    path = os.path.join(dataPath, '..', '..', 'src', 'results', 'sample' + str(i+1))
+    
+    if not os.path.exists(path):
+        os.mkdir(path)
+    
+    if model.the_best == None:
+        data = pd.DataFrame(model.calibratedData)
+    else:
+        data = pd.DataFrame(model.the_best['calibrated'])
+        labels = pd.DataFrame(model.the_best['labels'])
+        
+    data.to_csv(os.path.join(path, 'sampleData.csv'), index=False, header=False)
+    labels.to_csv(os.path.join(path, 'sampleLabels.csv'), index=False, header=False)
+    
+    
+    test1_MMD = [d['MMD'] for d in model.testingData]
+    test1_iter = [d['itteration'] for d in model.testingData]
+    test1_time = [d['time'] for d in model.testingData]
+    
+    
+    test2_f1 = [d['f1'] for d in model.f1_scores]
+    test2_iter = [d['itteration'] for d in model.f1_scores]
+    test2_time = [d['time'] for d in model.f1_scores]
+    
+    savePlot(test1_iter, test1_MMD, 'Iterácie', 'MMD', 'Vývoj hodnoty MMD v jednotlivých iteráciach trénovania', os.path.join(path, 'MMD_in_iterations.png'))
+    savePlot(test1_time, test1_MMD, 'Čas', 'MMD', 'Vývoj hodnoty MMD v čase trénovania', os.path.join(path, 'MMD_in_time.png'))
+    savePlot(test2_iter, test2_f1, 'Iterácie', 'F1 skóre', 'Vývoj hodnoty F1 skóre v jednotlivých iteráciach trénovania', os.path.join(path, 'F1_in_iterations.png'))
+    savePlot(test2_time, test2_f1, 'Čas', 'F1 skóre', 'Vývoj hodnoty F1 skóre v čase trénovania', os.path.join(path, 'F1_in_time.png'))
+    
+    
+def savePlot(X, Y, labelX, labelY, title, chartName):
+    plt.plot(X, Y, color='red')
+    
+    plt.xlabel(labelX)
+    plt.ylabel(labelY)
+    plt.title(title)
+    plt.savefig(chartName)
+    plt.close()

@@ -13,6 +13,7 @@ Updated by Lukas Hanincik
 Updated on 24.02.2019
 '''
 from keras import backend as K
+from operator import itemgetter
 import numpy as np
 import pandas as pd
 import os.path
@@ -50,7 +51,7 @@ keepProb          - The keep probability for each single cell to be used as
 '''
 
 import tensorflow as tf
-print(tf.test.gpu_device_name())
+
 
 dataSet = ['MultiCenter_16sample',
            '56_unnormalized', '56_normalized',
@@ -125,12 +126,12 @@ K.set_session(sess)
 '''
 Choose the reference sample.
 '''
-print('Choose the reference sample between ' + str(trainIndex))
+#print('Choose the reference sample between ' + str(trainIndex))
 refSampleInd = dh.chooseReferenceSample(dataPath, trainIndex,
                                         relevantMarkers, mode,
                                         skip_header, labels)
 
-print('Load the target ' + str(trainIndex[refSampleInd])) 
+print('Referencna vzorka: ' + str(trainIndex[refSampleInd])) 
 target = dh.loadDeepCyTOFData(dataPath, trainIndex[refSampleInd],
                               relevantMarkers, mode)
 
@@ -142,7 +143,7 @@ target = dh.uniformSamples(target)
 '''
 Train the de-noising auto encoder.
 '''
-print('Train the de-noising auto encoder.')
+print('Trenovanie odsumujuceho autoenkodera')
 DAE = dae.trainDAE(target, dataPath, refSampleInd, trainIndex,
                              relevantMarkers, mode, keepProb, denoise,
                              loadModel, dataSet[choice])
@@ -161,7 +162,7 @@ if loadModel:
                                 'savemodels/' + dataSet[choice] +
                                 '/cellClassifier.h5'))
 else:
-    print('Train the classifier on de-noised Target')
+    print('Trenovanie bunkoveho klasifikatora pomocou odsumenej referencnej vzorky')
     cellClassifier = net.trainClassifier(denoiseTarget, mode, refSampleInd,
                                          hiddenLayersSizes,
                                          activation,
@@ -179,6 +180,10 @@ mmd_before = np.zeros(testIndex.size)
 mmd_after = np.zeros(testIndex.size)
 
 for i in np.arange(testIndex.size):
+    # REMOVE
+    if i != 0:
+        continue
+    
     # Load the source.
     sourceIndex = testIndex[i]
     source = dh.loadDeepCyTOFData(dataPath, sourceIndex, relevantMarkers, mode)
@@ -190,8 +195,7 @@ for i in np.arange(testIndex.size):
                                          preprocessor = preprocessor)
     
     # Predict the cell type of the source.
-    print('Run the classifier on source ', str(sourceIndex),
-          'without calibration')
+    #print('Run the classifier on source ', str(sourceIndex), 'without calibration')
     acc[i,0], F1[i,0], predLabel = net.prediction(denoiseSource,
                                                 mode, i,
                                                cellClassifier)
@@ -200,7 +204,7 @@ for i in np.arange(testIndex.size):
     mmd_before[i] = K.eval(cf.MMD(denoiseSource.X, denoiseTarget.X).cost(
         K.variable(value=denoiseSource.X[sourceInds]),
         K.variable(value=denoiseTarget.X[targetInds])))
-    print('MMD before: ', str(mmd_before[i]))
+    #print('MMD before: ', str(mmd_before[i]))
     if isCalibrate:
         loadModel = False
         if loadModel:
@@ -222,11 +226,14 @@ for i in np.arange(testIndex.size):
                                             predLabel, cellClassifier, sess, sg_only=True)
             
             
-            testName_SG = 'INIT_TEST_SG_2'
-            testName = 'FINAL'
 
-            pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData','IIT_SRC', testName+'.xlsx'), index=False)
             
+            #testName_SG = 'INIT_TEST_SG_2'
+            #testName = 'FINAL'
+
+            #pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData','IIT_SRC', testName+'.xlsx'), index=False)
+            
+            """
             pd.DataFrame({
                     'lr_div': [calibrateSource.lr_div],
                     'lr_div_steps': [calibrateSource.lr_div_steps],
@@ -237,7 +244,7 @@ for i in np.arange(testIndex.size):
                     'learning_rate': [calibrateSource.init_lr]
                     }).to_excel(os.path.join('TestingData', 'IIT_SRC', testName+'_CONFIG.xlsx'), index=False)
 
-            """
+
             pd.DataFrame(calibrateSource.testingData).to_excel(os.path.join('TestingData', testName+'.xlsx'), index=False)
             
             pd.DataFrame({
@@ -256,6 +263,18 @@ for i in np.arange(testIndex.size):
                                                 mode, i,
                                            cellClassifier)
         
+        dh.generateOutput(calibrateSource, predLabel_SG, i, dataPath)
+        
+        f1_iteration = max(calibrateSource.f1_scores,key=itemgetter('f1'))['itteration']
+        f1_time = max(calibrateSource.f1_scores,key=itemgetter('f1'))['time']
+        print('SAMPLE ', i, ': Maximal F1 score - ', calibrateSource.f1, 
+              ', reached after - ', f1_iteration, ' itterations (', f1_time ,'sec)')
+
+        calibrateSource = None
+        
+
+    
+        """
         print('Run the classifier on source ', str(sourceIndex),
           'with calibration')
         acc[i,1], F1[i,1], predLabell = net.prediction(calibrateSource,
@@ -266,12 +285,14 @@ for i in np.arange(testIndex.size):
             K.variable(value=denoiseTarget.X[targetInds])))
         print('MMD after: ', str(mmd_after[i]))
         calibrateSource = None
+        """
     source = None
     denoiseSource = None
     
 '''
 Output the overall results.
 '''
+"""
 CI = np.zeros(10000)
 for i in range(10000):
     CI[i] = np.mean(np.random.choice(F1[:,0], size = 30))
@@ -284,3 +305,4 @@ if isCalibrate:
         CI[i] = np.mean(np.random.choice(F1[:,1], size = 30))
     CI = np.sort(CI)
     print(mode, ', ', np.mean(CI), ' (', CI[250], CI[9750],')')
+"""

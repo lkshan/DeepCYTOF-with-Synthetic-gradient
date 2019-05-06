@@ -148,11 +148,11 @@ def prediction(testSample, mode, i, net):
     y_true = y_test[y_test!=0]
     y_true = np.int_(y_true) - 1
     
-    print('sample ', i+1)
-    print('accuracy: ',np.round(acc*100, 2), '%')
+#    print('sample ', i+1)
+#    print('accuracy: ',np.round(acc*100, 2), '%')
 
-    print('F-measure: ',np.round(F1*100, 2))
-    print('confusion matrix:\n', confusionMatrix)
+#    print('F-measure: ',np.round(F1*100, 2))
+#    print('confusion matrix:\n', confusionMatrix)
     
     return acc, F1, y_test_pred
 

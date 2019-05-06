@@ -1,6 +1,7 @@
 import random
 import tensorflow as tf
 import numpy as np
+import time
 
 from tqdm import tqdm
 
@@ -99,6 +100,7 @@ class ModelSG(object):
         self.lr_div = 10
         self.lr_div_steps = 500
         self.l2_penalty = 1e-2
+        
         self.itterations = 300
         self.batch_size = 1000
         self.sg_pp = 1
@@ -275,15 +277,17 @@ class ModelSG(object):
         X_test, X_valid, y_test, y_valid = train_test_split(X_test_valid, y_test_valid, test_size=batch_size, random_state=28)
         
         self.f1 = self.checkState(X_valid, y_valid)
-        self.f1_scores.append(self.f1)
+        self.the_best = self.calibAndPredict()
+        self.f1_scores.append({'itteration': 0, 'f1': self.f1, 'time': 0})
         
         with self.sess.as_default():
             init = tf.global_variables_initializer()
             self.sess.run(init)
             testingData = self.test(batch_size, targetXMMD)
-            self.testingData.append({'itteration':0, 'MMD': testingData})
+            self.testingData.append({'itteration':0, 'MMD': testingData, 'time': 0})
             print('\n')
-            print('Initial MMD: ', testingData)
+            print('Pociatocna hodnota MMD: ', testingData)
+            iterationTime = .0
             for i in tqdm(range(1,iterations+1)):
                 if i % self.lr_div_steps == 0:
                     self.sess.run(self.reduce_lr)
@@ -297,6 +301,10 @@ class ModelSG(object):
                 
                 X,Y = self.inputs[0], self.inputs[1]
                 
+                ######### START TIMER ##########
+                now = time.time()
+                ################################
+                
                 if self.sg_only :
                     for d in self.decoupled_training: 
                         #if random.random() <= update_prob: self.sess.run(d, feed_dict={X:batchX,Y:batchY})
@@ -304,22 +312,25 @@ class ModelSG(object):
                 else:
                     self.sess.run(self.bpropOptimizer, feed_dict={X:batchX,Y:batchY})
                 
-                if i % 10 == 0:
+                ######### STOP TIMER ##########
+                later = time.time()
+                ###############################
+                
+                iterationTime += later - now
+                
+                if i % 30 == 0:
                     f1_score = self.checkState(X_valid, y_valid)
                     if f1_score > self.f1 :
                         self.f1 = f1_score
-                        self.the_best = None
-    #                    self.the_best = copy.deepcopy(self)
-                    self.f1_scores.append(f1_score)
+                        self.the_best = self.calibAndPredict()
+
+                    self.f1_scores.append({'itteration': i, 'f1': f1_score, 'time': iterationTime})
                 
                 if i % 30 == 0:
                     testingData = self.test(batch_size, targetXMMD)
-                    self.testingData.append({'itteration':i, 'MMD': testingData})
+                    self.testingData.append({'itteration':i, 'MMD': testingData, 'time': iterationTime})
                     print('\n')
-                    print('MMD after ' + str(i) + ': ' + str(testingData))
-                    
-                if i % 100 == 0:
-                    print('ahoj')
+                    print('MMD po ' + str(i) + ' iteraciach: ' + str(testingData))
     
     def test(self, batch_size, targetXMMD):
         """Tests the model on MNIST.test dataset
@@ -339,6 +350,21 @@ class ModelSG(object):
     def finalCalibration(self):
         X = self.inputs[0]
         return self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
+    
+    def calibAndPredict(self):
+        
+        X = self.inputs[0]
+        
+        model = Model(inputs=X, outputs=self.layers[6].output)(tf.convert_to_tensor(self.source.X))
+        
+        calibrated = self.sess.run(self.layers[6].output, feed_dict={X: self.source.X})
+        with self.classifierSession.as_default():
+            predLabel_prob = self.classifier.predict(calibrated, verbose = 0)
+        predLabel = np.argmax(predLabel_prob, axis = 1) + 1
+        predLabel[np.max(predLabel_prob, axis = 1) < .4] = 0
+        predLabel = np.squeeze(predLabel)
+        
+        return {'calibrated': calibrated, 'labels': predLabel}
     
     def checkState(self, X_valid, y_valid):
         
